@@ -1,7 +1,5 @@
-:root{--bg:#eceff1;--surface:#fff;--ink:#141a22;--mute:#5d6875;--line:#d5dbe0;--accent:#0b7a85;--accent-ink:#fff;--tape:#f2b705;--danger:#b42318;
+:root{--bg:#111;--surface:#1c1c1c;--ink:#f5f0e2;--mute:#b8ad92;--line:#403a2b;--accent:#d4af37;--accent-ink:#111;--tape:#d4af37;--danger:#ff887a;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10151b;--surface:#19212a;--ink:#eef1f4;--mute:#97a3af;--line:#2b3641;--accent:#38b6c2;--accent-ink:#06262a;--danger:#ff8a7a}}
-:root[data-theme="dark"]{--bg:#10151b;--surface:#19212a;--ink:#eef1f4;--mute:#97a3af;--line:#2b3641;--accent:#38b6c2;--accent-ink:#06262a;--danger:#ff8a7a}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Barlow,system-ui,sans-serif}
@@ -56,7 +54,7 @@ aside.card{position:sticky;top:12px;align-self:start}
 .wide{overflow-x:auto}
 .sheet.pdf{width:718px;max-width:none;margin:0;padding:0;border:0;border-radius:0}
 .btn:disabled{opacity:.6;cursor:wait}
-.lh{display:flex;align-items:center;gap:14px;border-bottom:3px solid #f2b705;padding-bottom:12px;margin-bottom:16px}.lh img{height:84px}.lh b{font-size:20px}
+.lh{display:flex;align-items:center;gap:14px;border-bottom:3px solid #d4af37;padding-bottom:12px;margin-bottom:16px}.lh img{height:84px}.lh b{font-size:20px}
 .pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:16px}.pics img{width:100%;border-radius:6px;display:block}
 #gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:10px}.th{position:relative}.th img{width:100%;height:90px;object-fit:cover;border-radius:6px;display:block}.th button{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:16px;cursor:pointer}
 @media print{body{background:#fff}header,main,.noprint{display:none!important}#inv{display:block!important}.sheet{border:0;padding:0;max-width:none}}
