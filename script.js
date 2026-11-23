@@ -11,7 +11,7 @@ const BIZ="Avant Custom Builds";
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,committed=true;
+let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",committed=true;
 let invNo;
 try{invNo=(+localStorage.getItem("vmp_inv")||1000)+1}catch(e){invNo=1001}
 
@@ -50,6 +50,7 @@ function build(){
 if(!lines.length){alert("Add at least one item before generating the quotation.");return false}
 if(lines.some(l=>l.needs&&!l.col)&&!confirm("Some items still need a colour. Generate the quotation anyway?"))return false;
 shown=invNo;committed=false;const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+shownDate=d;
 $("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="Avant Custom Builds logo"><b>${BIZ}</b></div><div class="meta"><div><h2>Quotation</h2><div>No. QT-${shown}</div><div>${d}</div></div>
 <div style="text-align:right"><b>Prepared for</b><div>${esc($("cn").value||"Customer")}</div><div>${esc($("cp").value)}</div><div>${esc($("vm").value)} ${esc($("vp").value)}</div></div></div>
 <div class="wide"><table><thead><tr><th>Requested work</th><th>Qty</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.name)}${l.col?`<div style="font-size:14px;color:#444">Colour: ${dot(l.col)}${esc(l.col)}</div>`:""}</td><td>${l.qty}</td></tr>`).join("")}</tbody></table></div>
@@ -62,6 +63,20 @@ $("inv").classList.add("show");scrollTo(0,0);return true;
 $("gen").onclick=build;
 $("back").onclick=()=>{$("inv").classList.remove("show");document.querySelector("main").style.display="";document.querySelector("header").style.display=""};
 $("prt").onclick=()=>{commit();window.print()};
+function csvCell(value){
+const text=String(value==null?"":value),safe=/^[\t\r\n ]*[=+\-@]/.test(text)?"'"+text:text;
+return '"'+safe.replace(/"/g,'""')+'"';
+}
+function saveCsv(){
+if(!shown){alert("Generate the quotation before saving quote data.");return}
+const rows=[["Quotation number","Date","Customer name","Phone","Vehicle make/model","Plate number","Customer requirements","Requested work","Quantity","Colour/finish","Estimated unit price (LKR)","Estimated line total (LKR)","Reference photo count"]];
+for(const l of lines)rows.push([`QT-${shown}`,shownDate,$("cn").value,$("cp").value,$("vm").value,$("vp").value,$("ideas").value,l.name,l.qty,l.col,l.price,l.price*l.qty,photos.length]);
+const csv="\uFEFF"+rows.map(row=>row.map(csvCell).join(",")).join("\r\n");
+const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+const a=document.createElement("a");a.href=url;a.download=pdfName().replace(/\.pdf$/i,".csv");
+document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);commit();
+}
+$("csv").onclick=saveCsv;
 let photos=[];
 function commit(){if(committed)return;committed=true;try{localStorage.setItem("vmp_inv",String(invNo))}catch(e){}invNo++}
 function shrink(f){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=no;r.onload=()=>{const im=new Image();im.onerror=no;im.onload=()=>{const s=Math.min(1,1000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.78))};im.src=r.result};r.readAsDataURL(f)})}
