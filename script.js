@@ -7,7 +7,7 @@ const CAT={
 };
 const LOGO="resources/logo1.avif";
 const BIZ="Avant Custom Builds";
-const SHEETS_URL="https://script.google.com/macros/s/AKfycbxZIgAkf6VhEbJM7VqsIjNVHtW6tEgVpciEG1CSq1D4bkx8enE4FLOsRuGLAk7c28DQ/exec";
+const SHEETS_URL="https://script.google.com/macros/s/AKfycbwpemRjw3rRbjEDJZOxXAAvKV21TrWQbaNblj7vYJnK58EW1dRFBjmBbvVTM2KZJmEq/exec";
 
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
