@@ -7,11 +7,12 @@ const CAT={
 };
 const LOGO="resources/logo1.avif";
 const BIZ="Avant Custom Builds";
+const SHEETS_URL="https://script.google.com/macros/s/AKfycbzhXhk2w5CxGZa3q35mvTxKEvhrqAyjtwWvFceVjnk_CycLPOXsoSNrN6twj8SMYM_y/exec";
 
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",committed=true;
+let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",committed=true,sheetSubmissionAttempted=false;
 let invNo;
 try{invNo=(+localStorage.getItem("vmp_inv")||1000)+1}catch(e){invNo=1001}
 
@@ -50,7 +51,7 @@ function build(){
 if(!lines.length){alert("Add at least one item before generating the quotation.");return false}
 if(lines.some(l=>l.needs&&!l.col)&&!confirm("Some items still need a colour. Generate the quotation anyway?"))return false;
 shown=invNo;committed=false;const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
-shownDate=d;
+shownDate=d;sheetSubmissionAttempted=false;$("sheets").disabled=false;
 $("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="Avant Custom Builds logo"><b>${BIZ}</b></div><div class="meta"><div><h2>Quotation</h2><div>No. QT-${shown}</div><div>${d}</div></div>
 <div style="text-align:right"><b>Prepared for</b><div>${esc($("cn").value||"Customer")}</div><div>${esc($("cp").value)}</div><div>${esc($("vm").value)} ${esc($("vp").value)}</div></div></div>
 <div class="wide"><table><thead><tr><th>Requested work</th><th>Qty</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.name)}${l.col?`<div style="font-size:14px;color:#444">Colour: ${dot(l.col)}${esc(l.col)}</div>`:""}</td><td>${l.qty}</td></tr>`).join("")}</tbody></table></div>
@@ -77,7 +78,34 @@ const a=document.createElement("a");a.href=url;a.download=pdfName().replace(/\.p
 document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);commit();
 }
 $("csv").onclick=saveCsv;
+function saveToGoogleSheet(){
+if(!shown){alert("Generate the quotation before saving it to Google Sheets.");return}
+if(!SHEETS_URL.startsWith("https://script.google.com/macros/s/")||!SHEETS_URL.endsWith("/exec")){
+alert("Set SHEETS_URL in script.js to your deployed Google Apps Script web-app URL first.");return
+}
+if(sheetSubmissionAttempted){alert("A save request was already sent for this quotation. Check the Google Sheet before trying again.");return}
+const data={
+quoteNumber:`QT-${shown}`,date:shownDate,customerName:$("cn").value,phone:$("cp").value,
+vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value,photoCount:photos.length,
+items:lines.map(l=>({name:l.name,quantity:l.qty,colour:l.col,unitPrice:l.price,lineTotal:l.price*l.qty}))
+};
+sheetSubmissionAttempted=true;commit();$("sheets").disabled=true;
+fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)})
+.then(()=>alert("The request was sent. Check the Google Sheet to confirm it was recorded; this page cannot verify the result."))
+.catch(error=>{console.error("Google Sheets submission failed.",error);alert("The request could not be sent. Check your connection and Google Apps Script deployment, then save the CSV as a backup.")});
+}
+$("sheets").onclick=saveToGoogleSheet;
 let photos=[];
+function resetQuote(){
+if(!confirm("Reset all customer, vehicle, item, note, and photo data? Download the CSV first if you want to keep a copy. The quotation number sequence will not be reset."))return;
+["cn","cp","vm","vp","ideas","cu","ph"].forEach(id=>$(id).value="");
+lines=[];photos=[];seq=0;cur=Object.keys(CAT)[0];shown=0;shownDate="";committed=true;sheetSubmissionAttempted=false;$("sheets").disabled=false;
+$("sheet").innerHTML="";$("inv").classList.remove("show");
+document.querySelector("main").style.display="";document.querySelector("header").style.display="";
+gal();draw();scrollTo(0,0);
+}
+$("reset").onclick=resetQuote;
+$("resetPreview").onclick=resetQuote;
 function commit(){if(committed)return;committed=true;try{localStorage.setItem("vmp_inv",String(invNo))}catch(e){}invNo++}
 function shrink(f){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=no;r.onload=()=>{const im=new Image();im.onerror=no;im.onload=()=>{const s=Math.min(1,1000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.78))};im.src=r.result};r.readAsDataURL(f)})}
 function gal(){$("gal").innerHTML=photos.map((p,i)=>`<div class="th"><img src="${p}" alt="Photo ${i+1}"><button data-i="${i}" aria-label="Remove photo ${i+1}">×</button></div>`).join("")}
