@@ -7,7 +7,7 @@ const CAT={
 };
 const LOGO="resources/logo1.avif";
 const BIZ="Avant Custom Builds";
-const SHEETS_URL="https://script.google.com/macros/s/AKfycbwpemRjw3rRbjEDJZOxXAAvKV21TrWQbaNblj7vYJnK58EW1dRFBjmBbvVTM2KZJmEq/exec";
+const SHEETS_URL="https://script.google.com/macros/s/AKfycbyGXrhSlI9rNbBuDA_CDLNqrvqTC_gEdKCkbTfJyYRWG9Lp0OHOIwvX2RXnP5wYlnpN/exec";
 
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
@@ -86,8 +86,7 @@ alert("Set SHEETS_URL in script.js to your deployed Google Apps Script web-app U
 if(sheetSubmissionAttempted){alert("A save request was already sent for this quotation. Check the Google Sheet before trying again.");return}
 const data={
 quoteNumber:`QT-${shown}`,date:shownDate,customerName:$("cn").value,phone:$("cp").value,
-vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value,photoCount:photos.length,
-items:lines.map(l=>({name:l.name,quantity:l.qty,colour:l.col,unitPrice:l.price,lineTotal:l.price*l.qty}))
+vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value
 };
 sheetSubmissionAttempted=true;commit();$("sheets").disabled=true;
 fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)})
