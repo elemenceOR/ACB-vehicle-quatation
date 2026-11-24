@@ -48,6 +48,8 @@ aside.card{position:sticky;top:12px;align-self:start}
 .sheet th,.sheet td{text-align:left;padding:8px 6px;border-bottom:1px solid #ddd}
 .sheet th:nth-child(n+2),.sheet td:nth-child(n+2){text-align:right}
 .sheet .meta{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.sheet .meta>div{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+.sheet .meta>div:last-child{text-align:right}
 .sheet .sum{margin-left:auto;width:min(320px,100%)}
 .sheet .sum div{display:flex;justify-content:space-between;padding:3px 0}
 .sheet .sum .g{font-weight:700;font-size:20px;border-top:2px solid #111;margin-top:6px;padding-top:6px}

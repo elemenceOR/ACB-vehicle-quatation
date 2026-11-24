@@ -88,10 +88,10 @@ const data={
 quoteNumber:`QT-${shown}`,date:shownDate,customerName:$("cn").value,phone:$("cp").value,
 vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value
 };
-sheetSubmissionAttempted=true;commit();$("sheets").disabled=true;
+sheetSubmissionAttempted=true;$("sheets").disabled=true;
 fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)})
-.then(()=>alert("The request was sent. Check the Google Sheet to confirm it was recorded; this page cannot verify the result."))
-.catch(error=>{console.error("Google Sheets submission failed.",error);alert("The request could not be sent. Check your connection and Google Apps Script deployment, then save the CSV as a backup.")});
+.then(()=>{commit();alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded.")})
+.catch(error=>{sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.")});
 }
 $("sheets").onclick=saveToGoogleSheet;
 let photos=[];
