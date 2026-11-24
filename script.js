@@ -12,9 +12,32 @@ const SHEETS_URL="https://script.google.com/macros/s/AKfycbyGXrhSlI9rNbBuDA_CDLN
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",committed=true,sheetSubmissionAttempted=false;
-let invNo;
-try{invNo=(+localStorage.getItem("vmp_inv")||1000)+1}catch(e){invNo=1001}
+let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",sheetSubmissionAttempted=false,reservingQuote=false;
+
+function reserveQuoteNumber(){
+return new Promise((resolve,reject)=>{
+if(!SHEETS_URL.startsWith("https://script.google.com/macros/s/")||!SHEETS_URL.endsWith("/exec")){
+reject(new Error("Set SHEETS_URL to the deployed Apps Script web-app URL."));
+return
+}
+const callbackName="quoteNumberCallback_"+Date.now()+"_"+Math.floor(Math.random()*1000000);
+const script=document.createElement("script");
+let timer;
+const cleanup=()=>{clearTimeout(timer);delete window[callbackName];script.remove()};
+window[callbackName]=result=>{
+cleanup();
+if(!result||!result.ok||!Number.isInteger(result.quoteNumber)){
+reject(new Error(result&&result.message||"The server could not reserve a quotation number."));
+return
+}
+resolve(result.quoteNumber);
+};
+script.onerror=()=>{cleanup();reject(new Error("Could not reach the quotation-number service."))};
+timer=setTimeout(()=>{cleanup();reject(new Error("The quotation-number request timed out."))},15000);
+script.src=SHEETS_URL+"?action=reserve&callback="+encodeURIComponent(callbackName);
+document.head.appendChild(script);
+});
+}
 
 function tabs(){
 $("tabs").innerHTML=Object.keys(CAT).map(c=>`<button class="tab" role="tab" aria-selected="${c===cur}" data-c="${c}">${c}</button>`).join("");
@@ -47,10 +70,15 @@ if(e.target.classList.contains("pick")){const b=l.col.replace(/\s*\(#[0-9a-f]{6}
 totals()};
 $("lines").onclick=e=>{if(e.target.classList.contains("x")){const id=e.target.closest(".line").dataset.id;lines=lines.filter(l=>l.id!=id);draw()}};
 
-function build(){
+async function build(){
 if(!lines.length){alert("Add at least one item before generating the quotation.");return false}
 if(lines.some(l=>l.needs&&!l.col)&&!confirm("Some items still need a colour. Generate the quotation anyway?"))return false;
-shown=invNo;committed=false;const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+if(reservingQuote)return false;
+reservingQuote=true;$("gen").disabled=true;$("dlq").disabled=true;
+try{shown=await reserveQuoteNumber()}
+catch(error){console.error("Could not reserve a quotation number.",error);alert("Could not get a shared quotation number: "+error.message+" Check your connection and Apps Script deployment, then try again.");return false}
+finally{reservingQuote=false;$("gen").disabled=false;$("dlq").disabled=false}
+const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
 shownDate=d;sheetSubmissionAttempted=false;$("sheets").disabled=false;
 $("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="Avant Custom Builds logo"><b>${BIZ}</b></div><div class="meta"><div><h2>Quotation</h2><div>No. QT-${shown}</div><div>${d}</div></div>
 <div style="text-align:right"><b>Prepared for</b><div>${esc($("cn").value||"Customer")}</div><div>${esc($("cp").value)}</div><div>${esc($("vm").value)} ${esc($("vp").value)}</div></div></div>
@@ -61,9 +89,9 @@ ${photos.length?`<div class="pics">${photos.map(p=>`<img src="${p}" alt="Referen
 document.querySelector("main").style.display="none";document.querySelector("header").style.display="none";
 $("inv").classList.add("show");scrollTo(0,0);return true;
 }
-$("gen").onclick=build;
+$("gen").onclick=()=>build();
 $("back").onclick=()=>{$("inv").classList.remove("show");document.querySelector("main").style.display="";document.querySelector("header").style.display=""};
-$("prt").onclick=()=>{commit();window.print()};
+$("prt").onclick=()=>window.print();
 function csvCell(value){
 const text=String(value==null?"":value),safe=/^[\t\r\n ]*[=+\-@]/.test(text)?"'"+text:text;
 return '"'+safe.replace(/"/g,'""')+'"';
@@ -75,7 +103,7 @@ for(const l of lines)rows.push([`QT-${shown}`,shownDate,$("cn").value,$("cp").va
 const csv="\uFEFF"+rows.map(row=>row.map(csvCell).join(",")).join("\r\n");
 const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
 const a=document.createElement("a");a.href=url;a.download=pdfName().replace(/\.pdf$/i,".csv");
-document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);commit();
+document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $("csv").onclick=saveCsv;
 function saveToGoogleSheet(){
@@ -90,7 +118,7 @@ vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value
 };
 sheetSubmissionAttempted=true;$("sheets").disabled=true;
 fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)})
-.then(()=>{commit();alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded.")})
+.then(()=>alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded."))
 .catch(error=>{sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.")});
 }
 $("sheets").onclick=saveToGoogleSheet;
@@ -98,25 +126,24 @@ let photos=[];
 function resetQuote(){
 if(!confirm("Reset all customer, vehicle, item, note, and photo data? Download the CSV first if you want to keep a copy. The quotation number sequence will not be reset."))return;
 ["cn","cp","vm","vp","ideas","cu","ph"].forEach(id=>$(id).value="");
-lines=[];photos=[];seq=0;cur=Object.keys(CAT)[0];shown=0;shownDate="";committed=true;sheetSubmissionAttempted=false;$("sheets").disabled=false;
+lines=[];photos=[];seq=0;cur=Object.keys(CAT)[0];shown=0;shownDate="";sheetSubmissionAttempted=false;$("sheets").disabled=false;
 $("sheet").innerHTML="";$("inv").classList.remove("show");
 document.querySelector("main").style.display="";document.querySelector("header").style.display="";
 gal();draw();scrollTo(0,0);
 }
 $("reset").onclick=resetQuote;
 $("resetPreview").onclick=resetQuote;
-function commit(){if(committed)return;committed=true;try{localStorage.setItem("vmp_inv",String(invNo))}catch(e){}invNo++}
 function shrink(f){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=no;r.onload=()=>{const im=new Image();im.onerror=no;im.onload=()=>{const s=Math.min(1,1000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.78))};im.src=r.result};r.readAsDataURL(f)})}
 function gal(){$("gal").innerHTML=photos.map((p,i)=>`<div class="th"><img src="${p}" alt="Photo ${i+1}"><button data-i="${i}" aria-label="Remove photo ${i+1}">×</button></div>`).join("")}
 $("ph").onchange=async e=>{for(const f of e.target.files){try{photos.push(await shrink(f))}catch(x){}}e.target.value="";gal()};
 $("gal").onclick=e=>{const b=e.target.closest("button");if(b){photos.splice(+b.dataset.i,1);gal()}};
 function pdfName(){const n=($("cn").value||"").replace(/[\\\/:*?"<>|\u0000-\u001f]/g,"").replace(/\s+/g," ").trim().replace(/[. ]+$/,"");return (n||"Customer")+".pdf"}
-function dl(rebuild){
-if(rebuild&&!build())return;
+async function dl(rebuild){
+if(rebuild&&!(await build()))return;
 if(!window.html2pdf){alert("The PDF library could not load. Check your internet connection, or use Print.");return}
 const s=$("sheet"),bs=document.querySelectorAll("#dlq,#dlp");
 bs.forEach(b=>b.disabled=true);s.classList.add("pdf");
-html2pdf().set({margin:10,filename:pdfName(),image:{type:"jpeg",quality:.95},html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",scrollY:0},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".pics img",".lh"]}}).from(s).save().then(commit).catch(()=>alert("Could not create the PDF. Try Print instead.")).finally(()=>{s.classList.remove("pdf");bs.forEach(b=>b.disabled=false)});
+html2pdf().set({margin:10,filename:pdfName(),image:{type:"jpeg",quality:.95},html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",scrollY:0},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".pics img",".lh"]}}).from(s).save().catch(()=>alert("Could not create the PDF. Try Print instead.")).finally(()=>{s.classList.remove("pdf");bs.forEach(b=>b.disabled=false)});
 }
 $("dlq").onclick=()=>dl(true);
 $("dlp").onclick=()=>dl(false);
