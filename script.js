@@ -6,12 +6,15 @@ const CAT={
 "Interior":[["Seat upholstery","Full set, leather",280000],["Dashboard trim","Wrap or leather",90000],["Ambient lighting","Cabin kit",35000],["Steering wheel retrim","Leather or Alcantara",40000],["Headliner retrim","",120000],["Sound system upgrade","Head unit and speakers",150000]]
 };
 const LOGO="resources/logo1.avif";
-const BIZ="Avant Custom Builds";
+const BIZ="Avant Customs (Private) Limited";
+const BIZ_ADDRESS="613, Bangalawa Junction, Kotte Road, Pitakotte, Colombo";
+const BIZ_PHONE="+94 777 513 351";
 const SHEETS_URL="https://script.google.com/macros/s/AKfycbyGXrhSlI9rNbBuDA_CDLNqrvqTC_gEdKCkbTfJyYRWG9Lp0OHOIwvX2RXnP5wYlnpN/exec";
 
 const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const quoteNumber=n=>`QT-${String(n).padStart(4,"0")}`;
 let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",sheetSubmissionAttempted=false,reservingQuote=false;
 
 function reserveQuoteNumber(){
@@ -46,9 +49,9 @@ const on=lines.some(l=>l.key===cur+i);
 return `<button class="item${on?" on":""}" data-i="${i}"><b>${esc(it[0])}</b><small>${esc(it[1])}</small><span class="p">${on?"Added – tap to remove":"Tap to add"}</span></button>`}).join("");
 }
 function dot(c){const h=(c.match(/#[0-9a-f]{6}/i)||[])[0],v=h||c.trim();return window.CSS&&CSS.supports("color",v)?`<span class="dot" style="background:${esc(v)}"></span>`:""}
-function addLine(name,price,key){
+function addLine(name,price,key,category){
 const f=key&&lines.find(l=>l.key===key);
-if(f){f.qty++}else lines.push({id:++seq,key,name,qty:1,price,col:"",needs:!!key&&/^(Paint|Wrapping|Interior|Body kits)/.test(key)&&!/Sound/.test(name)});
+if(f){f.qty++}else lines.push({id:++seq,key,name,category,qty:1,price,col:"",needs:!!key&&/^(Paint|Wrapping|Interior|Body kits)/.test(key)&&!/Sound/.test(name)});
 draw();
 }
 function draw(){
@@ -61,8 +64,8 @@ $("tots").innerHTML=lines.length?`<div class="tot big"><span>Items</span><span>$
 $("tabs").onclick=e=>{const b=e.target.closest(".tab");if(b){cur=b.dataset.c;tabs()}};
 $("items").onclick=e=>{const b=e.target.closest(".item");if(!b)return;const i=+b.dataset.i,it=CAT[cur][i];
 const key=cur+i,ex=lines.find(l=>l.key===key);
-if(ex){lines=lines.filter(l=>l.key!==key);draw()}else addLine(it[0],it[2],key)};
-$("addc").onclick=()=>{const n=$("cu").value.trim();if(!n)return;addLine(n,0);$("cu").value=""};
+if(ex){lines=lines.filter(l=>l.key!==key);draw()}else addLine(it[0],it[2],key,cur)};
+$("addc").onclick=()=>{const n=$("cu").value.trim();if(!n)return;addLine(n,0,"","Custom");$("cu").value=""};
 $("lines").oninput=e=>{const r=e.target.closest(".line");if(!r)return;const l=lines.find(x=>x.id==r.dataset.id);
 if(e.target.classList.contains("q"))l.qty=Math.max(1,+e.target.value||1);
 if(e.target.classList.contains("col")){l.col=e.target.value;r.querySelector(".cr").classList.toggle("need",l.needs&&!l.col)}
@@ -80,7 +83,7 @@ catch(error){console.error("Could not reserve a quotation number.",error);alert(
 finally{reservingQuote=false;$("gen").disabled=false;$("dlq").disabled=false}
 const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
 shownDate=d;sheetSubmissionAttempted=false;$("sheets").disabled=false;
-$("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="Avant Custom Builds logo"><b>${BIZ}</b></div><div class="meta"><div><h2>Quotation</h2><div>No. QT-${shown}</div><div>${d}</div></div>
+$("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="${esc(BIZ)} logo"><div><b>${BIZ}</b><div>${BIZ_ADDRESS}</div><div>Phone: ${BIZ_PHONE}</div></div></div><div class="meta"><div><h2>Quotation</h2><div>No. ${quoteNumber(shown)}</div><div>${d}</div></div>
 <div style="text-align:right"><b>Prepared for</b><div>${esc($("cn").value||"Customer")}</div><div>${esc($("cp").value)}</div><div>${esc($("vm").value)} ${esc($("vp").value)}</div></div></div>
 <div class="wide"><table><thead><tr><th>Requested work</th><th>Qty</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.name)}${l.col?`<div style="font-size:14px;color:#444">Colour: ${dot(l.col)}${esc(l.col)}</div>`:""}</td><td>${l.qty}</td></tr>`).join("")}</tbody></table></div>
 ${$("ideas").value.trim()?`<p style="margin-top:20px"><b>Customer requirements</b><br>${esc($("ideas").value).replace(/\n/g,"<br>")}</p>`:""}
@@ -98,28 +101,33 @@ return '"'+safe.replace(/"/g,'""')+'"';
 }
 function saveCsv(){
 if(!shown){alert("Generate the quotation before saving quote data.");return}
-const rows=[["Quotation number","Date","Customer name","Phone","Vehicle make/model","Plate number","Customer requirements","Requested work","Quantity","Colour/finish","Estimated unit price (LKR)","Estimated line total (LKR)","Reference photo count"]];
-for(const l of lines)rows.push([`QT-${shown}`,shownDate,$("cn").value,$("cp").value,$("vm").value,$("vp").value,$("ideas").value,l.name,l.qty,l.col,l.price,l.price*l.qty,photos.length]);
+const rows=[["Quotation number","Date","Customer name","Phone","Vehicle make/model","Plate number","Customer requirements","Work category","Requested work","Quantity","Colour/finish","Estimated unit price (LKR)","Estimated line total (LKR)","Reference photo count"]];
+for(const l of lines)rows.push([quoteNumber(shown),shownDate,$("cn").value,$("cp").value,$("vm").value,$("vp").value,$("ideas").value,l.category,l.name,l.qty,l.col,l.price,l.price*l.qty,photos.length]);
 const csv="\uFEFF"+rows.map(row=>row.map(csvCell).join(",")).join("\r\n");
 const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
 const a=document.createElement("a");a.href=url;a.download=pdfName().replace(/\.pdf$/i,".csv");
 document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $("csv").onclick=saveCsv;
-function saveToGoogleSheet(){
+async function saveToGoogleSheet(){
 if(!shown){alert("Generate the quotation before saving it to Google Sheets.");return}
 if(!SHEETS_URL.startsWith("https://script.google.com/macros/s/")||!SHEETS_URL.endsWith("/exec")){
 alert("Set SHEETS_URL in script.js to your deployed Google Apps Script web-app URL first.");return
 }
 if(sheetSubmissionAttempted){alert("A save request was already sent for this quotation. Check the Google Sheet before trying again.");return}
 const data={
-quoteNumber:`QT-${shown}`,date:shownDate,customerName:$("cn").value,phone:$("cp").value,
-vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value
+quoteNumber:quoteNumber(shown),date:shownDate,customerName:$("cn").value,phone:$("cp").value,
+vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value,
+lines:lines.map(l=>({category:l.category,name:l.name,quantity:l.qty,colour:l.col,unitPrice:l.price,lineTotal:l.price*l.qty})),
+photos
 };
 sheetSubmissionAttempted=true;$("sheets").disabled=true;
-fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)})
-.then(()=>alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded."))
-.catch(error=>{sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.")});
+try{
+await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)});
+alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded.");
+}catch(error){
+sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.");
+}
 }
 $("sheets").onclick=saveToGoogleSheet;
 let photos=[];

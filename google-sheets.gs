@@ -1,4 +1,21 @@
 const INITIAL_LAST_QUOTE_NUMBER = 1023;
+const QUOTE_HEADERS = [
+  "Quotation number",
+  "Date",
+  "Customer name",
+  "Phone",
+  "Vehicle make/model",
+  "Plate number",
+  "Customer requirements",
+  "Work category",
+  "Requested work",
+  "Quantity",
+  "Colour/finish",
+  "Estimated unit price (LKR)",
+  "Estimated line total (LKR)",
+  "Reference photo count",
+  "Reference photo links"
+];
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {};
@@ -60,6 +77,20 @@ function doPost(e) {
   if (!data.quoteNumber || !data.date) {
     throw new Error("Quotation number and date are required.");
   }
+  if (!Array.isArray(data.lines) || data.lines.length === 0) {
+    throw new Error("At least one work item is required.");
+  }
+  if (!Array.isArray(data.photos)) {
+    throw new Error("Reference photos must be provided as an array.");
+  }
+  data.lines.forEach(line => {
+    const quantity = Number(line.quantity);
+    const unitPrice = Number(line.unitPrice);
+    if (!line.name || !Number.isInteger(quantity) || quantity < 1 ||
+        !Number.isFinite(unitPrice) || unitPrice < 0) {
+      throw new Error("A work item has invalid name, quantity, or price.");
+    }
+  });
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) {
@@ -69,18 +100,13 @@ function doPost(e) {
     || spreadsheet.insertSheet("Quotes");
 
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "Quotation number",
-      "Date",
-      "Customer name",
-      "Phone",
-      "Vehicle make/model",
-      "Plate number",
-      "Customer requirements"
-    ]);
+    sheet.appendRow(QUOTE_HEADERS);
+  } else {
+    sheet.getRange(1, 1, 1, QUOTE_HEADERS.length).setValues([QUOTE_HEADERS]);
   }
 
-  const values = [
+  const photoLinks = saveReferencePhotos(data.quoteNumber, data.photos);
+  const quoteValues = [
     data.quoteNumber,
     data.date,
     data.customerName,
@@ -88,11 +114,46 @@ function doPost(e) {
     data.vehicle,
     data.plate,
     data.requirements
-  ].map(value => {
-    const text = value == null ? "" : String(value);
-    return /^[\t\r\n ]*[=+\-@]/.test(text) ? "'" + text : text;
+  ];
+  const rows = data.lines.map(line => {
+    const quantity = Number(line.quantity);
+    const unitPrice = Number(line.unitPrice);
+    return quoteValues.concat([
+      line.category,
+      line.name,
+      quantity,
+      line.colour,
+      unitPrice,
+      unitPrice * quantity,
+      photoLinks.length,
+      photoLinks.join("\n")
+    ]).map(safeSheetValue);
   });
-
-  sheet.appendRow(values);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, QUOTE_HEADERS.length)
+    .setValues(rows);
   return ContentService.createTextOutput("OK");
+}
+
+function saveReferencePhotos(quoteNumber, photos) {
+  if (photos.length === 0) return [];
+  const folderName = "Quotation reference photos";
+  const folders = DriveApp.getFoldersByName(folderName);
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  return photos.map((photo, index) => {
+    const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(photo);
+    if (!match) throw new Error("A reference photo has an unsupported format.");
+    const extension = match[1].split("/")[1].replace("jpeg", "jpg");
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(match[2]),
+      match[1],
+      quoteNumber + "-reference-" + (index + 1) + "." + extension
+    );
+    return folder.createFile(blob).getUrl();
+  });
+}
+
+function safeSheetValue(value) {
+  if (typeof value === "number") return value;
+  const text = value == null ? "" : String(value);
+  return /^[\t\r\n ]*[=+\-@]/.test(text) ? "'" + text : text;
 }
