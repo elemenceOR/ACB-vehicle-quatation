@@ -14,7 +14,8 @@ const QUOTE_HEADERS = [
   "Estimated unit price (LKR)",
   "Estimated line total (LKR)",
   "Reference photo count",
-  "Reference photo links"
+  "Reference photo links",
+  "Photo upload status"
 ];
 
 function doGet(e) {
@@ -105,7 +106,6 @@ function doPost(e) {
     sheet.getRange(1, 1, 1, QUOTE_HEADERS.length).setValues([QUOTE_HEADERS]);
   }
 
-  const photoLinks = saveReferencePhotos(data.quoteNumber, data.photos);
   const quoteValues = [
     data.quoteNumber,
     data.date,
@@ -125,31 +125,65 @@ function doPost(e) {
       line.colour,
       unitPrice,
       unitPrice * quantity,
-      photoLinks.length,
-      photoLinks.join("\n")
+      data.photos.length,
+      "",
+      data.photos.length ? "Pending" : "No photos attached"
     ]).map(safeSheetValue);
   });
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, QUOTE_HEADERS.length)
+  const firstDataRow = sheet.getLastRow() + 1;
+  sheet.getRange(firstDataRow, 1, rows.length, QUOTE_HEADERS.length)
     .setValues(rows);
+
+  if (data.photos.length > 0) {
+    let photoLinks = [];
+    let photoStatus;
+    try {
+      const result = saveReferencePhotos(data.quoteNumber, data.photos);
+      photoLinks = result.links;
+      photoStatus = result.errors.length
+        ? "Partial: saved " + photoLinks.length + " of " + data.photos.length +
+          "; " + result.errors.join("; ")
+        : "Saved " + photoLinks.length + " of " + data.photos.length;
+    } catch (error) {
+      photoStatus = "Failed: " + (error.message || String(error));
+      console.error("Reference photo upload failed.", error);
+    }
+
+    sheet.getRange(firstDataRow, 15, rows.length, 1)
+      .setValues(rows.map(() => [safeSheetValue(photoLinks.join("\n"))]));
+    sheet.getRange(firstDataRow, 16, rows.length, 1)
+      .setValues(rows.map(() => [safeSheetValue(photoStatus)]));
+  }
   return ContentService.createTextOutput("OK");
 }
 
 function saveReferencePhotos(quoteNumber, photos) {
-  if (photos.length === 0) return [];
+  if (photos.length === 0) return {links: [], errors: []};
   const folderName = "Quotation reference photos";
   const folders = DriveApp.getFoldersByName(folderName);
   const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-  return photos.map((photo, index) => {
-    const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(photo);
-    if (!match) throw new Error("A reference photo has an unsupported format.");
-    const extension = match[1].split("/")[1].replace("jpeg", "jpg");
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(match[2]),
-      match[1],
-      quoteNumber + "-reference-" + (index + 1) + "." + extension
-    );
-    return folder.createFile(blob).getUrl();
+  const result = {links: [], errors: []};
+  photos.forEach((photo, index) => {
+    try {
+      const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(photo);
+      if (!match) throw new Error("Unsupported image format.");
+      const extension = match[1].split("/")[1].replace("jpeg", "jpg");
+      const blob = Utilities.newBlob(
+        Utilities.base64Decode(match[2]),
+        match[1],
+        quoteNumber + "-reference-" + (index + 1) + "." + extension
+      );
+      result.links.push(folder.createFile(blob).getUrl());
+    } catch (error) {
+      result.errors.push("photo " + (index + 1) + ": " + (error.message || String(error)));
+      console.error("Could not save reference photo " + (index + 1) + ".", error);
+    }
   });
+  return result;
+}
+
+function authorizeDriveAccess() {
+  DriveApp.getRootFolder().getId();
 }
 
 function safeSheetValue(value) {

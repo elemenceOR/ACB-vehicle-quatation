@@ -124,7 +124,7 @@ photos
 sheetSubmissionAttempted=true;$("sheets").disabled=true;
 try{
 await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)});
-alert("The save request was sent. Check the Google Sheet and Apps Script > Executions to confirm it was recorded.");
+alert("The request was sent, but the browser cannot confirm the Apps Script result. Check the Quotes sheet for the record and its Photo upload status. If Drive access is needed, run authorizeDriveAccess once in the Apps Script editor.");
 }catch(error){
 sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.");
 }
