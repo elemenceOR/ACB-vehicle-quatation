@@ -15,7 +15,7 @@ const $=id=>document.getElementById(id);
 const fmt=n=>"LKR "+Math.round(n).toLocaleString("en-LK");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const quoteNumber=n=>`QT-${String(n).padStart(4,"0")}`;
-let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",sheetSubmissionAttempted=false,reservingQuote=false;
+let cur=Object.keys(CAT)[0],lines=[],seq=0,shown=0,shownDate="",sheetSaved=false,savingSheet=false,reservingQuote=false;
 
 function reserveQuoteNumber(){
 return new Promise((resolve,reject)=>{
@@ -77,12 +77,14 @@ async function build(){
 if(!lines.length){alert("Add at least one item before generating the quotation.");return false}
 if(lines.some(l=>l.needs&&!l.col)&&!confirm("Some items still need a colour. Generate the quotation anyway?"))return false;
 if(reservingQuote)return false;
+if(!shown){
 reservingQuote=true;$("gen").disabled=true;$("dlq").disabled=true;
-try{shown=await reserveQuoteNumber()}
+try{shown=await reserveQuoteNumber();sheetSaved=false}
 catch(error){console.error("Could not reserve a quotation number.",error);alert("Could not get a shared quotation number: "+error.message+" Check your connection and Apps Script deployment, then try again.");return false}
 finally{reservingQuote=false;$("gen").disabled=false;$("dlq").disabled=false}
+}
 const d=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
-shownDate=d;sheetSubmissionAttempted=false;$("sheets").disabled=false;
+shownDate=d;$("sheets").disabled=sheetSaved;
 $("sheet").innerHTML=`<div class="lh"><img src="${LOGO}" alt="${esc(BIZ)} logo"><div><b>${BIZ}</b><div>${BIZ_ADDRESS}</div><div>Phone: ${BIZ_PHONE}</div></div></div><div class="meta"><div><h2>Quotation</h2><div>No. ${quoteNumber(shown)}</div><div>${d}</div></div>
 <div style="text-align:right"><b>Prepared for</b><div>${esc($("cn").value||"Customer")}</div><div>${esc($("cp").value)}</div><div>${esc($("vm").value)} ${esc($("vp").value)}</div></div></div>
 <div class="wide"><table><thead><tr><th>Requested work</th><th>Qty</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.name)}${l.col?`<div style="font-size:14px;color:#444">Colour: ${dot(l.col)}${esc(l.col)}</div>`:""}</td><td>${l.qty}</td></tr>`).join("")}</tbody></table></div>
@@ -114,19 +116,30 @@ if(!shown){alert("Generate the quotation before saving it to Google Sheets.");re
 if(!SHEETS_URL.startsWith("https://script.google.com/macros/s/")||!SHEETS_URL.endsWith("/exec")){
 alert("Set SHEETS_URL in script.js to your deployed Google Apps Script web-app URL first.");return
 }
-if(sheetSubmissionAttempted){alert("A save request was already sent for this quotation. Check the Google Sheet before trying again.");return}
+if(sheetSaved){alert("This quotation is already saved to the Google Sheet.");return}
+if(savingSheet)return;
 const data={
 quoteNumber:quoteNumber(shown),date:shownDate,customerName:$("cn").value,phone:$("cp").value,
 vehicle:$("vm").value,plate:$("vp").value,requirements:$("ideas").value,
 lines:lines.map(l=>({category:l.category,name:l.name,quantity:l.qty,colour:l.col,unitPrice:l.price,lineTotal:l.price*l.qty})),
 photos
 };
-sheetSubmissionAttempted=true;$("sheets").disabled=true;
+savingSheet=true;$("sheets").disabled=true;
+const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),90000);
 try{
-await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data)});
-alert("The request was sent, but the browser cannot confirm the Apps Script result. Check the Quotes sheet for the record and its Photo upload status. If Drive access is needed, run authorizeDriveAccess once in the Apps Script editor.");
+const res=await fetch(SHEETS_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(data),signal:ctrl.signal});
+let out;
+try{out=await res.json()}
+catch(parseError){throw new Error("Unexpected response from the server. Make sure the Apps Script was redeployed as a new version.")}
+if(!out||!out.ok)throw new Error(out&&out.message||"The server rejected the quotation.");
+sheetSaved=true;
+alert(out.duplicate?"This quotation was already in the Google Sheet, so nothing was added.":"Saved to the Google Sheet. Photos: "+(out.photoStatus||"n/a")+".");
 }catch(error){
-sheetSubmissionAttempted=false;$("sheets").disabled=false;console.error("Google Sheets submission failed.",error);alert("Could not send the request. Check your connection and Apps Script deployment, then try again or save the CSV as a backup.");
+console.error("Google Sheets submission failed.",error);
+const why=error.name==="AbortError"?"The request timed out. Check the Quotes sheet first; retrying will not create a duplicate.":error.message;
+alert("Could not save the quotation. "+why+" You can retry, or save the CSV as a backup.");
+}finally{
+clearTimeout(timer);savingSheet=false;$("sheets").disabled=sheetSaved;
 }
 }
 $("sheets").onclick=saveToGoogleSheet;
@@ -134,7 +147,7 @@ let photos=[];
 function resetQuote(){
 if(!confirm("Reset all customer, vehicle, item, note, and photo data? Download the CSV first if you want to keep a copy. The quotation number sequence will not be reset."))return;
 ["cn","cp","vm","vp","ideas","cu","ph"].forEach(id=>$(id).value="");
-lines=[];photos=[];seq=0;cur=Object.keys(CAT)[0];shown=0;shownDate="";sheetSubmissionAttempted=false;$("sheets").disabled=false;
+lines=[];photos=[];seq=0;cur=Object.keys(CAT)[0];shown=0;shownDate="";sheetSaved=false;$("sheets").disabled=false;
 $("sheet").innerHTML="";$("inv").classList.remove("show");
 document.querySelector("main").style.display="";document.querySelector("header").style.display="";
 gal();draw();scrollTo(0,0);

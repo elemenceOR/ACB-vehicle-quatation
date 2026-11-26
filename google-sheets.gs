@@ -66,6 +66,30 @@ function getHighestRecordedQuoteNumber(sheet) {
 }
 
 function doPost(e) {
+  try {
+    const data = parseAndValidatePost(e);
+    const saved = writeQuoteRow(data);
+    if (saved.duplicate) {
+      return jsonOutput({
+        ok: true,
+        duplicate: true,
+        message: "This quotation was already saved."
+      });
+    }
+    const photoStatus = saveRowPhotos(saved.sheet, saved.row, data);
+    return jsonOutput({ok: true, photoStatus: photoStatus});
+  } catch (error) {
+    console.error("Saving the quotation failed.", error);
+    return jsonOutput({ok: false, message: error.message || String(error)});
+  }
+}
+
+function jsonOutput(result) {
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function parseAndValidatePost(e) {
   if (!e || !e.postData || !e.postData.contents) {
     throw new Error("Missing quotation data in POST request.");
   }
@@ -73,6 +97,9 @@ function doPost(e) {
   const data = JSON.parse(e.postData.contents);
   if (!data.quoteNumber || !data.date) {
     throw new Error("Quotation number and date are required.");
+  }
+  if (!/^QT-\d+$/.test(String(data.quoteNumber))) {
+    throw new Error("Invalid quotation number format.");
   }
   if (!Array.isArray(data.lines) || data.lines.length === 0) {
     throw new Error("At least one work item is required.");
@@ -88,76 +115,99 @@ function doPost(e) {
       throw new Error("A work item has invalid name, quantity, or price.");
     }
   });
+  return data;
+}
 
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  if (!spreadsheet) {
-    throw new Error("This Apps Script must be bound to the destination Google Sheet.");
-  }
-  const sheet = spreadsheet.getSheetByName("Quotes")
-    || spreadsheet.insertSheet("Quotes");
+function quoteAlreadySaved(sheet, quoteNumber) {
+  if (sheet.getLastRow() < 2) return false;
+  const wanted = String(quoteNumber).trim();
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues()
+    .some(row => String(row[0]).trim() === wanted);
+}
 
-  ensureQuoteSheetSchema(sheet, spreadsheet);
+function writeQuoteRow(data) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (!spreadsheet) {
+      throw new Error("This Apps Script must be bound to the destination Google Sheet.");
+    }
+    const sheet = spreadsheet.getSheetByName("Quotes")
+      || spreadsheet.insertSheet("Quotes");
 
-  const quoteValues = [
-    data.quoteNumber,
-    data.date,
-    data.customerName,
-    data.phone,
-    data.vehicle,
-    data.plate,
-    data.requirements
-  ];
-  const workItems = data.lines.map((line, index) => {
-    const quantity = Number(line.quantity);
-    const unitPrice = Number(line.unitPrice);
-    return formatWorkItem(
-      line.category,
-      line.name,
-      quantity,
-      line.colour,
-      unitPrice,
-      unitPrice * quantity,
-      index
-    );
-  }).join("\n");
-  const estimatedTotal = data.lines.reduce(
-    (total, line) => total + Number(line.unitPrice) * Number(line.quantity),
-    0
-  );
-  const row = quoteValues.concat([
-    workItems,
-    estimatedTotal,
-    data.photos.length,
-    "",
-    data.photos.length ? "Pending" : "No photos attached"
-  ]).map(safeSheetValue);
-  const firstDataRow = sheet.getLastRow() + 1;
-  sheet.getRange(firstDataRow, 1, 1, QUOTE_HEADERS.length).setValues([row]);
-  sheet.setColumnWidth(8, 520);
-  sheet.getRange(firstDataRow, 8).setWrap(true);
-  sheet.autoResizeRows(firstDataRow, 1);
-
-  if (data.photos.length > 0) {
-    let photoLinks = [];
-    let photoStatus;
-    try {
-      const result = saveReferencePhotos(data.quoteNumber, data.photos);
-      photoLinks = result.links;
-      photoStatus = result.errors.length
-        ? "Partial: saved " + photoLinks.length + " of " + data.photos.length +
-          "; " + result.errors.join("; ")
-        : "Saved " + photoLinks.length + " of " + data.photos.length;
-    } catch (error) {
-      photoStatus = "Failed: " + (error.message || String(error));
-      console.error("Reference photo upload failed.", error);
+    ensureQuoteSheetSchema(sheet, spreadsheet);
+    if (quoteAlreadySaved(sheet, data.quoteNumber)) {
+      return {duplicate: true};
     }
 
-    sheet.getRange(firstDataRow, 11, 1, 1)
-      .setValues([[safeSheetValue(photoLinks.join("\n"))]]);
-    sheet.getRange(firstDataRow, 12, 1, 1)
-      .setValues([[safeSheetValue(photoStatus)]]);
+    const quoteValues = [
+      data.quoteNumber,
+      data.date,
+      data.customerName,
+      data.phone,
+      data.vehicle,
+      data.plate,
+      data.requirements
+    ];
+    const workItems = data.lines.map((line, index) => {
+      const quantity = Number(line.quantity);
+      const unitPrice = Number(line.unitPrice);
+      return formatWorkItem(
+        line.category,
+        line.name,
+        quantity,
+        line.colour,
+        unitPrice,
+        unitPrice * quantity,
+        index
+      );
+    }).join("\n");
+    const estimatedTotal = data.lines.reduce(
+      (total, line) => total + Number(line.unitPrice) * Number(line.quantity),
+      0
+    );
+    const row = quoteValues.concat([
+      workItems,
+      estimatedTotal,
+      data.photos.length,
+      "",
+      data.photos.length ? "Pending" : "No photos attached"
+    ]).map(safeSheetValue);
+    const rowNumber = sheet.getLastRow() + 1;
+    sheet.getRange(rowNumber, 1, 1, QUOTE_HEADERS.length).setValues([row]);
+    sheet.setColumnWidth(8, 520);
+    sheet.getRange(rowNumber, 8).setWrap(true);
+    sheet.autoResizeRows(rowNumber, 1);
+    SpreadsheetApp.flush();
+    return {duplicate: false, sheet: sheet, row: rowNumber};
+  } finally {
+    lock.releaseLock();
   }
-  return ContentService.createTextOutput("OK");
+}
+
+function saveRowPhotos(sheet, rowNumber, data) {
+  if (data.photos.length === 0) return "No photos attached";
+
+  let photoLinks = [];
+  let photoStatus;
+  try {
+    const result = saveReferencePhotos(data.quoteNumber, data.photos);
+    photoLinks = result.links;
+    photoStatus = result.errors.length
+      ? "Partial: saved " + photoLinks.length + " of " + data.photos.length +
+        "; " + result.errors.join("; ")
+      : "Saved " + photoLinks.length + " of " + data.photos.length;
+  } catch (error) {
+    photoStatus = "Failed: " + (error.message || String(error));
+    console.error("Reference photo upload failed.", error);
+  }
+
+  sheet.getRange(rowNumber, 11, 1, 1)
+    .setValues([[safeSheetValue(photoLinks.join("\n"))]]);
+  sheet.getRange(rowNumber, 12, 1, 1)
+    .setValues([[safeSheetValue(photoStatus)]]);
+  return photoStatus;
 }
 
 function ensureQuoteSheetSchema(sheet, spreadsheet) {
